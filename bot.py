@@ -51,7 +51,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❓ Unknown command. Use buttons below!")
 
 def main():
-    app = Application.builder().token("1234567890:ABCdefGhIJKlmnopQRS...").build()
+    app = Application.builder().token("8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA").build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
