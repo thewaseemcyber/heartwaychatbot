@@ -8,70 +8,64 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        ['📱 Commands', 'ℹ️ Info'], 
-        ['🎥 Videos', '❤️ Support']
+        ['🌟 New Chat', '👥 Browse People'],
+        ['📍 Nearby People', '💎 Credits'],
+        ['👤 Profile', '❓ Help']
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(
-        "✅ @Heartwaychatbot LIVE 24/7!\n\n"
-        "Choose a button:",
+        "🎭 **Welcome to @Heartwaychatbot**\n\n"
+        "Choose from the menu below 👇",
+        parse_mode='Markdown',
         reply_markup=reply_markup
-    )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🆘 **Help Menu**\n\n"
-        "• /start - 🎬 Main menu\n"
-        "• /help - ❓ Help\n"
-        "• /info - ℹ️ Info\n\n"
-        "**@Heartwaychatbot** ❤️"
-    )
-
-async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "ℹ️ **Bot Info**\n\n"
-        "• **Name**: @Heartwaychatbot\n"
-        "• **Status**: 🟢 24/7 Online\n"
-        "• **Hosted**: Railway\n"
-        "• **Version**: v2.0\n\n"
-        "**Educational bot by Heartway** 🎓"
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
-    if text == "📱 Commands":
+    if text == "🌟 New Chat":
+        keyboard = [['✅ Start Chat', '❌ Cancel']]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text(
-            "📋 **All Commands:**\n"
-            "• /start - 🎬 Main Menu\n"
-            "• /help - ❓ Help\n"
-            "• /info - ℹ️ Info"
+            "🔄 **Finding chat partner...**\n\n"
+            "Waiting for someone to join...\n\n"
+            "Tap Start when ready:",
+            reply_markup=reply_markup
         )
-    elif text == "ℹ️ Info":
-        await info_command(update, context)
-    elif text == "🎥 Videos":
-        await update.message.reply_text(
-            "📹 **Videos Coming Soon!**\n\n"
-            "Subscribe @Heartwaychatbot for updates! ❤️"
-        )
-    elif text == "❤️ Support":
-        await update.message.reply_text(
-            "💖 **Support Heartway**\n\n"
-            "**Share bot**: @Heartwaychatbot\n\n"
-            "Thank you! 🙏"
-        )
+    elif text == "👥 Browse People":
+        await update.message.reply_text("👥 **1,247 users online**\n\n**Coming Soon™** ✨")
+    elif text == "📍 Nearby People":
+        await update.message.reply_text("📍 **Nearby People**\n\n**Srinagar, Jammu & Kashmir**\n\n**Feature Coming Soon** 🚀")
+    elif text == "💎 Credits":
+        await update.message.reply_text("💎 **Your Credits: 25**\n\n• Free daily: 5 credits\n• Refer friends: +10")
+    elif text == "👤 Profile":
+        await update.message.reply_text("👤 **Your Profile**\n\n**Anonymous User**\n• Level 1\n• 3 Chats Today")
+    elif text == "❓ Help":
+        await update.message.reply_text("❓ **Help**\n\n• 🌟 New Chat\n• 👥 Browse People\n• 💎 Credits\n• 👤 Profile")
+    elif text == "✅ Start Chat":
+        await update.message.reply_text("🎉 **Chat Started!**\n\n**Anonymous:** Hi there! 👋")
+    elif text == "❌ Cancel":
+        await update.message.reply_text("❌ **Search cancelled**\n\nTap 🌟 New Chat to try again!")
     else:
-        await update.message.reply_text("❓ Use buttons below!")
+        # Show main menu
+        keyboard = [
+            ['🌟 New Chat', '👥 Browse People'],
+            ['📍 Nearby People', '💎 Credits'],
+            ['👤 Profile', '❓ Help']
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text(
+            "🎭 **Welcome to @Heartwaychatbot**\n\n"
+            "Choose from the menu below 👇",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("info", info_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
-    
     app.run_polling()
 
 if __name__ == "__main__":
