@@ -206,7 +206,7 @@ if __name__ == "__main__":
     init_db()
     print("🚀 Heartway v7.1 Starting...")
     
-    app = Application.builder().token("YOUR_BOT_TOKEN_HERE").build()
+    app = Application.builder().token("8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA").build()
     
     # Handlers
     app.add_handler(CommandHandler("start", start))
