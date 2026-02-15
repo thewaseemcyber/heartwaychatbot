@@ -641,7 +641,7 @@ def main():
     print("🚀 Heartway Chat v8.0 - LAUNCHING...")
     print("🔐 100% Anonymous | 🛡️ Secure | ✨ Private\n")
     
-    app = Application.builder().token("YOUR_BOT_TOKEN").build()
+    app = Application.builder().token("8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA").build()
     
     # Conversation handler for profile creation
     conv_handler = ConversationHandler(
