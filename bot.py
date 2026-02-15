@@ -1,6 +1,6 @@
 """
-@Heartwaychatbot v10.0 - EXACT @tikible_bot Clone
-FINAL VERSION - Srinagar's #1 Anonymous Chat App
+@Heartwaychatbot v11.0 - SIMPLEST + Tikible Style
+ONLY 3 COMMANDS: /start /stop /report
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -8,7 +8,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 import json
 import os
 
-# Data storage
 DATA_FILE = 'heartway_data.json'
 
 def load_data():
@@ -18,7 +17,7 @@ def load_data():
                 return json.load(f)
     except:
         pass
-    return {"profiles": {}, "waiting_boys": [], "waiting_girls": []}
+    return {"profiles": {}, "waiting_boys": [], "waiting_girls": [], "active_chats": {}}
 
 def save_data(data):
     try:
@@ -27,7 +26,7 @@ def save_data(data):
     except:
         pass
 
-# MAIN MENU - Tikible Style
+# Tikible style menu
 def main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✨ Start Chat", callback_data="start_chat")],
@@ -36,13 +35,13 @@ def main_menu():
         [InlineKeyboardButton("💌 Messages", callback_data="messages")]
     ])
 
-# EXACT VIP SCREEN from your screenshot
+# EXACT Tikible VIP screen
 def vip_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔍 Age Based Matching", callback_data="vip_age")],
+        [InlineKeyboardButton("🔍 Age Matching", callback_data="vip_age")],
         [InlineKeyboardButton("❤️ Interest Matching", callback_data="vip_interest")],
-        [InlineKeyboardButton("📸 Send Photos/Videos", callback_data="vip_media")],
-        [InlineKeyboardButton("💬 Unlimited Messages", callback_data="vip_unlimited")],
+        [InlineKeyboardButton("📸 Send Photos", callback_data="vip_media")],
+        [InlineKeyboardButton("💬 Unlimited Msg", callback_data="vip_unlimited")],
         [],
         [InlineKeyboardButton("💎 ₹99 / 1 week", callback_data="vip_99")],
         [InlineKeyboardButton("💎 ₹259 / 4-6 months", callback_data="vip_259")],
@@ -53,126 +52,62 @@ def vip_menu():
         [InlineKeyboardButton("⬅️ Menu", callback_data="back")]
     ])
 
-# /start
+# 1. /start - Start new match
 async def start(update, context):
-    await update.message.reply_text(
-        "💕 *Welcome to Heartway Chat!* ✨\n\n"
-        "👋 *Tikible style anonymous chat*\n\n"
-        "👤 *Create profile:*\n"
-        "`Mir boy 24 Srinagar`\n\n"
-        "🌟 *Then start chatting!*",
-        reply_markup=main_menu(),
-        parse_mode='Markdown'
-    )
-
-# Profile
-async def profile(update, context):
-    query = update.callback_query
-    await query.answer()
-    user_id = str(query.from_user.id)
-    
-    data = load_data()
-    profile = data["profiles"].get(user_id)
-    
-    if profile:
-        vip_status = "✅ VIP" if user_id in data.get("vip_users", []) else "❌ Free"
-        await query.edit_message_text(
-            f"👤 *Your Profile*\n\n"
-            f"✨ *{profile['name']}*\n"
-            f"🔸 *{profile['gender'].title()}*\n"
-            f"📅 *{profile['age']}*\n"
-            f"📍 *{profile['city']}*\n\n"
-            f"💎 *VIP:* {vip_status}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✨ Start Chat", callback_data="start_chat")],
-                [InlineKeyboardButton("⭐ VIP", callback_data="vip")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-            ]),
-            parse_mode='Markdown'
-        )
-    else:
-        await query.edit_message_text(
-            "👤 *Create Profile*\n\n"
-            "`Mir boy 24 Srinagar`\n"
-            "*Send exactly this format!*",
-            parse_mode='Markdown'
-        )
-
-# VIP Screen - EXACT copy from your screenshot
-async def vip(update, context):
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "✨ *Unlock Premium Benefits*\n"
-        "*Enjoy premium plan!* ✨\n\n"
-        "*What you get:*\n"
-        "🔍 *Search based on partner age:*\n"
-        "*Find partners within your age range*\n\n"
-        "❤️ *Interest based matching:*\n"
-        "*Get matched with people who match your interests*\n"
-        "*Boys or girls - up to you who you want to match*\n\n"
-        "📸 *Send photos, GIFs, videos*\n"
-        "*Unlimited users can share media*\n\n"
-        "💬 *Unlimited make chat*\n"
-        "*Express yourself fully*\n\n"
-        "*Please select duration, the longer duration,*\n"
-        "*the greater discount*",
-        reply_markup=vip_menu(),
-        parse_mode='Markdown'
-    )
-
-# Start Chat
-async def start_chat(update, context):
-    query = update.callback_query
-    await query.answer()
-    user_id = str(query.from_user.id)
-    
+    user_id = str(update.message.from_user.id)
     data = load_data()
     profile = data["profiles"].get(user_id)
     
     if not profile:
-        await query.edit_message_text(
-            "❌ *Create profile first!*\n\n"
-            "`Mir boy 24 Srinagar`",
+        await update.message.reply_text(
+            "👤 *Create profile first:*\n\n"
+            "`Mir boy 24 Srinagar`\n\n"
+            "💕 *Then use /start*",
             reply_markup=main_menu(),
             parse_mode='Markdown'
         )
         return
     
-    gender = profile['gender']
+    # Clear any active chat
+    if user_id in data["active_chats"]:
+        del data["active_chats"][user_id]
     
-    # Real matching logic
+    # Start matching
+    gender = profile['gender']
     if gender == "boy" and data["waiting_girls"]:
         partner_id = data["waiting_girls"].pop(0)
+        data["active_chats"][user_id] = partner_id
+        data["active_chats"][partner_id] = user_id
         save_data(data)
-        await query.edit_message_text(
+        
+        partner_name = data["profiles"][partner_id]["name"]
+        await update.message.reply_text(
             f"💕 *MATCH FOUND!*\n\n"
-            f"✅ *Connected to Girl*\n"
-            f"📍 *{data['profiles'].get(partner_id, {}).get('city', 'Srinagar')}*\n\n"
-            f"✨ *Chat now!*",
+            f"✅ *Connected to {partner_name}*\n"
+            f"✨ *Chat started! Use /stop to end*\n\n"
+            f"*Send your message:*",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💬 Message", callback_data="chat")],
-                [InlineKeyboardButton("🔄 New Match", callback_data="start_chat")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-            ]),
-            parse_mode='Markdown'
+                [InlineKeyboardButton("📞 Call", callback_data="call")],
+                [InlineKeyboardButton("/stop - End Chat", callback_data="stop")]
+            ])
         )
         return
     elif gender == "girl" and data["waiting_boys"]:
         partner_id = data["waiting_boys"].pop(0)
+        data["active_chats"][user_id] = partner_id
+        data["active_chats"][partner_id] = user_id
         save_data(data)
-        await query.edit_message_text(
+        
+        partner_name = data["profiles"][partner_id]["name"]
+        await update.message.reply_text(
             f"💕 *MATCH FOUND!*\n\n"
-            f"✅ *Connected to Boy*\n"
-            f"📍 *{data['profiles'].get(partner_id, {}).get('city', 'Srinagar')}*\n\n"
-            f"✨ *Chat now!*",
+            f"✅ *Connected to {partner_name}*\n"
+            f"✨ *Chat started! Use /stop to end*\n\n"
+            "*Send your message:*",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💬 Message", callback_data="chat")],
-                [InlineKeyboardButton("🔄 New Match", callback_data="start_chat")],
-                [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-            ]),
-            parse_mode='Markdown'
+                [InlineKeyboardButton("📞 Call", callback_data="call")],
+                [InlineKeyboardButton("/stop - End Chat", callback_data="stop")]
+            ])
         )
         return
     
@@ -183,84 +118,113 @@ async def start_chat(update, context):
         data["waiting_girls"].append(user_id)
     save_data(data)
     
-    await query.edit_message_text(
-        f"🔍 *Finding perfect match...*\n\n"
-        f"👤 *{profile['name']}* ({profile['gender'].title()})\n"
-        f"📍 *{profile['city']}*\n\n"
-        f"⏳ *Srinagar matches nearby!*",
+    await update.message.reply_text(
+        f"🔍 *Finding match for {profile['name']}...*\n\n"
+        f"⏳ *Use /start anytime for new match*",
+        reply_markup=main_menu()
+    )
+
+# 2. /stop - End current chat
+async def stop(update, context):
+    user_id = str(update.message.from_user.id)
+    data = load_data()
+    
+    if user_id in data["active_chats"]:
+        partner_id = data["active_chats"].pop(user_id)
+        if partner_id in data["active_chats"]:
+            data["active_chats"].pop(partner_id)
+        save_data(data)
+        await update.message.reply_text(
+            "✅ *Chat ended!*\n\n"
+            "✨ *Use /start for new match*",
+            reply_markup=main_menu()
+        )
+    else:
+        await update.message.reply_text(
+            "❌ *No active chat!*\n\n"
+            "💕 *Use /start to begin*",
+            reply_markup=main_menu()
+        )
+
+# 3. /report - Report after chat (Tikible style)
+async def report(update, context):
+    await update.message.reply_text(
+        "⚠️ *Report User*\n\n"
+        "*Why are you reporting?*\n\n"
+        "1️⃣ Inappropriate content\n"
+        "2️⃣ Harassment\n"
+        "3️⃣ Spam\n"
+        "4️⃣ Other\n\n"
+        "*Send number or reason:*",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="start_chat")],
-            [InlineKeyboardButton("⭐ VIP Priority", callback_data="vip")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-        ]),
+            [InlineKeyboardButton("✅ Reported", callback_data="reported")],
+            [InlineKeyboardButton("⬅️ Cancel", callback_data="back")]
+        ])
+    )
+
+# Profile & VIP (Tikible style)
+async def profile(update, context):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    data = load_data()
+    profile = data["profiles"].get(user_id)
+    
+    if profile:
+        await query.edit_message_text(
+            f"👤 *{profile['name']}*\n🔸 *{profile['gender'].title()}*\n"
+            f"📅 *{profile['age']}* | 📍 *{profile['city']}*\n\n"
+            f"*Commands: /start /stop /report*",
+            reply_markup=main_menu(),
+            parse_mode='Markdown'
+        )
+    else:
+        await query.edit_message_text(
+            "👤 `Mir boy 24 Srinagar`",
+            parse_mode='Markdown'
+        )
+
+async def vip(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "✨ *Unlock Premium Benefits*\n"
+        "*Enjoy premium plan!* ✨\n\n"
+        "🔍 *Age based matching*\n"
+        "❤️ *Interest matching*\n"
+        "📸 *Send photos/videos*\n"
+        "💬 *Unlimited messages*\n\n"
+        "*Longer duration = greater discount*",
+        reply_markup=vip_menu(),
         parse_mode='Markdown'
     )
 
-# Back button
 async def back(update, context):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text(
         "💕 *Heartway Chat*\n\n"
-        "*Tikible style anonymous chat*",
+        "*Commands: /start /stop /report*",
         reply_markup=main_menu(),
         parse_mode='Markdown'
     )
 
-# VIP placeholders
-async def vip_feature(update, context):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "👑 *VIP Only Feature*\n\n"
-        "*Upgrade to VIP to unlock this!*\n\n"
-        "💎 *₹99/week or ₹599/year*",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⭐ Get VIP", callback_data="vip")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-        ]),
-        parse_mode='Markdown'
-    )
-
-# Messages placeholder
-async def messages(update, context):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(
-        "💌 *Messages*\n\n"
-        "*Your chat history will appear here*",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✨ Start Chat", callback_data="start_chat")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="back")]
-        ]),
-        parse_mode='Markdown'
-    )
-
-# 1-LINE Profile Creation
+# Message forwarding during chat
 async def handle_message(update, context):
     user_id = str(update.message.from_user.id)
-    text = update.message.text.strip()
+    data = load_data()
     
-    parts = text.split()
-    if len(parts) >= 4:
+    # Profile creation
+    parts = update.message.text.split()
+    if len(parts) >= 4 and not user_id in data["active_chats"]:
         try:
-            data = load_data()
             data["profiles"][user_id] = {
-                "name": parts[0],
-                "gender": parts[1].lower(),
-                "age": int(parts[2]),
-                "city": " ".join(parts[3:])
+                "name": parts[0], "gender": parts[1].lower(),
+                "age": int(parts[2]), "city": " ".join(parts[3:])
             }
             save_data(data)
-            
-            profile = data["profiles"][user_id]
             await update.message.reply_text(
-                f"✅ *Profile Created!*\n\n"
-                f"👤 *{profile['name']}*\n"
-                f"🔸 *{profile['gender'].title()}*\n"
-                f"📅 *{profile['age']}*\n"
-                f"📍 *{profile['city']}*\n\n"
-                f"✨ *Perfect! Tap Start Chat!*",
+                f"✅ *{parts[0]} created!*\n\n*Use /start*",
                 reply_markup=main_menu(),
                 parse_mode='Markdown'
             )
@@ -268,28 +232,55 @@ async def handle_message(update, context):
         except:
             pass
     
+    # Forward message to partner
+    if user_id in data["active_chats"]:
+        partner_id = data["active_chats"][user_id]
+        await context.bot.send_message(
+            chat_id=partner_id,
+            text=f"💬 *{data['profiles'][user_id]['name']}:* {update.message.text}",
+            parse_mode='Markdown'
+        )
+        return
+    
     await update.message.reply_text(
         "💕 *Heartway Chat*\n\n"
-        "👤 *Send: `Mir boy 24 Srinagar`*",
+        "*Commands: /start /stop /report*",
+        reply_markup=main_menu(),
+        parse_mode='Markdown'
+    )
+
+# Placeholder handlers
+async def placeholder(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🚀 *Feature coming soon!*\n\n"
+        "*Use /start /stop /report*",
         reply_markup=main_menu(),
         parse_mode='Markdown'
     )
 
 # MAIN
 if __name__ == "__main__":
-    print("🚀 @Heartwaychatbot v10.0 - Tikible Clone LIVE!")
+    print("🚀 @Heartwaychatbot v11.0 LIVE!")
+    print("✅ ONLY 3 COMMANDS: /start /stop /report")
+    
     app = Application.builder().token("8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA").build()
     
-    # Handlers
+    # ONLY 3 COMMANDS
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("report", report))
+    
+    # Buttons
     app.add_handler(CallbackQueryHandler(profile, pattern="^profile$"))
-    app.add_handler(CallbackQueryHandler(start_chat, pattern="^start_chat$"))
     app.add_handler(CallbackQueryHandler(vip, pattern="^vip$"))
-    app.add_handler(CallbackQueryHandler(messages, pattern="^messages$"))
     app.add_handler(CallbackQueryHandler(back, pattern="^back$"))
-    app.add_handler(CallbackQueryHandler(vip_feature, pattern="^(vip_age|vip_interest|vip_media|vip_unlimited|vip_99|vip_259|vip_599|vip_free|vip_free_trial|chat)$"))
+    app.add_handler(CallbackQueryHandler(placeholder, pattern="^(start_chat|messages|vip_.*|reported|call)$"))
+    
+    # Messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ PRODUCTION READY - Deploy now!")
+    print("✅ Tikible style + 3 commands ONLY!")
     app.run_polling()
 
