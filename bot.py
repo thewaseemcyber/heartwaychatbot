@@ -1,4 +1,4 @@
-]import os
+import os
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -14,7 +14,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(
-        "🎭 **Welcome to @Heartwaychatbot v4.0**\n\n"
+        "🎭 Welcome to @Heartwaychatbot v4.0
+
+"
         "Choose from the menu 👇",
         parse_mode='Markdown',
         reply_markup=reply_markup
@@ -23,21 +25,113 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
-    responses = {
-        "🌟 New Chat": "🎉 **Connected to anonymous user!**\n\n💕 **Chat started** - Type your message!\n[Heart animation active]",
-        "🔍 Search People": "🔍 **Search Results**\n\n👤 1,247 users online\n• Male: 678 | Female: 569\n**Tap user to chat** ✨",
-        "👥 Browse People": "👥 **Online Users**\n\n1. @CoolStudent (20,M) 2. @MovieFan (24,F)\n**Tap name to start chat**",
-        "✏️ My Profile": "👤 **Your Profile**\n\n**@YourName** | 22 • Male\n❤️ Coding, Movies\n📝 *Srinagar Student*\n\n**✏️ Edit | ✅ Share**",
-        "📞 Call": "📱 **Start Call**\n\n📹 **Video Call** | 📞 **Audio Call**\n**Tap to connect**",
-        "💎 VIP": "💎 **VIP ₹99/month**\n\n✅ Gender choice\n✅ Priority match\n✅ Unlimited chat\n**UPI: heartway@paytm**",
-        "⚠️ Report": "⚠️ **Report User**\n\n• Ads/Spam → **20 day BAN**\n• Abuse → **15 day SUSPEND**\n**Type reason:**",
-        "🔚 End Chat": "💔 **DISCONNECTED**\n\n*Heartbreak sound plays*\n**Tap 🌟 New Chat**",
-        "📹 Video Call": "📹 **Video call connecting...**\n**Partner joining**",
-        "📞 Audio Call": "📞 **Audio call started**\n**Partner connected** 🎵"
-    }
-    
-    if text in responses:
-        await update.message.reply_text(responses[text], parse_mode='Markdown')
+    if text == "🌟 New Chat":
+        await update.message.reply_text(
+            "🎉 Connected to anonymous user!
+
+"
+            "💕 Chat started - Type your message!
+"
+            "[Heart animation active]"
+        )
+        
+    elif text == "🔍 Search People":
+        await update.message.reply_text(
+            "🔍 Search Results
+
+"
+            "👤 1,247 users online
+"
+            "• Male: 678 | Female: 569
+"
+            "• Age 18-35
+
+"
+            "Tap user to chat ✨"
+        )
+        
+    elif text == "👥 Browse People":
+        await update.message.reply_text(
+            "👥 Online Users
+
+"
+            "1. @CoolStudent23 (20, Male)
+"
+            "2. @MovieLover (24, Female)
+"
+            "3. @CricketFan (22, Male)
+
+"
+            "Tap name to start chat"
+        )
+        
+    elif text == "✏️ My Profile":
+        await update.message.reply_text(
+            "👤 Your Profile
+
+"
+            "@YourUsername
+"
+            "🎂 Age: 22 • Male
+"
+            "❤️ Interests: Coding, Movies
+"
+            "📝 *Student from Srinagar*
+
+"
+            "✏️ Edit Profile | ✅ Share"
+        )
+        
+    elif text == "📞 Call":
+        keyboard = [['📹 Video Call', '📞 Audio Call'], ['❌ Cancel']]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text(
+            "📱 Start Call
+
+"
+            "Choose call type:",
+            reply_markup=reply_markup
+        )
+        
+    elif text == "💎 VIP":
+        await update.message.reply_text(
+            "💎 VIP Features ₹99/month
+
+"
+            "✅ Choose gender
+"
+            "✅ Priority matching
+"
+            "✅ Unlimited chats
+"
+            "✅ No ads
+
+"
+            "Pay: heartway@paytm"
+        )
+        
+    elif text == "⚠️ Report":
+        await update.message.reply_text(
+            "⚠️ Report User
+
+"
+            "• Spam/Ads → 20 day ban
+"
+            "• Abuse → 15 day suspend
+"
+            "Describe issue:"
+        )
+        
+    elif text == "🔚 End Chat":
+        await update.message.reply_text(
+            "💔 Disconnected!
+
+"
+            "*Heartbreak sound*
+"
+            "Tap 🌟 New Chat for new partner!"
+        )
+        
     else:
         await start(update, context)
 
@@ -47,6 +141,5 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.run_polling()
 
-if __name__ == "__main__":
+if name == "main":
     main()
-
