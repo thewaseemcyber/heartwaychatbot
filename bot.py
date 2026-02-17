@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
- TOKEN = '8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA'
+ TOKEN ='8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA'
 
 # Database setup (for future expansions like credits)
 conn = sqlite3.connect('bot.db', check_same_thread=False)
