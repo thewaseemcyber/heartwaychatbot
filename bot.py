@@ -1,128 +1,35 @@
-# v14.0 - REAL-TIME FEATURES
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-import time
-
-# Real-time data (in-memory)
+# Perfect memory storage
 profiles = {}
 waiting_boys = []
 waiting_girls = []
 active_chats = {}
-chat_history = {}  # {chat_id: [{"user": name, "msg": text, "time": ts}]}
-typing_status = {}  # {user_id: True/False}
 
 def main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✨ /start - New Match", callback_data="start")],
-        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
-        [InlineKeyboardButton("⭐ VIP", callback_data="vip")],
-        [InlineKeyboardButton("/stop - End", callback_data="stop")]
+        [InlineKeyboardButton("💌 Write message", callback_data="write")],
+        [InlineKeyboardButton("🔍 Find partner", callback_data="find")],
+        [InlineKeyboardButton("👫 Friends", callback_data="friends")]
     ])
 
-async def cmd_start(update, context):
-    user_id = str(update.message.from_user.id)
-    
-    if user_id not in profiles:
-        await update.message.reply_text(
-            "👤 `Mir boy 24 Srinagar`",
-            reply_markup=main_menu()
-        )
-        return
-    
-    profile = profiles[user_id]
-    
-    # End existing chat
-    if user_id in active_chats:
-        partner_id = active_chats.pop(user_id)
-        active_chats.pop(partner_id, None)
-        typing_status.pop(user_id, None)
-        typing_status.pop(partner_id, None)
-    
-    gender = profile['gender']
-    
-    # REAL-TIME MATCHING
-    if gender == 'boy' and waiting_girls:
-        partner_id = waiting_girls.pop(0)
-        active_chats[user_id] = partner_id
-        active_chats[partner_id] = user_id
-        chat_id = f"{min(user_id, partner_id)}-{max(user_id, partner_id)}"
-        chat_history[chat_id] = []
-        
-        partner_profile = profiles[partner_id]
-        await update.message.reply_text(
-            f"💕 *REAL-TIME MATCH!*\n\n"
-            f"✅ *{partner_profile['name']}* ({partner_profile['gender'].title()})\n"
-            f"📍 *{partner_profile['city']}*\n\n"
-            f"✨ *Typing indicator LIVE!*\n"
-            f"📱 *Messages instant!*",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💬 Chat", callback_data="chat")],
-                [InlineKeyboardButton("/stop", callback_data="stop")]
-            ]),
-            parse_mode='Markdown'
-        )
-        return
-    elif gender == 'girl' and waiting_boys:
-        partner_id = waiting_boys.pop(0)
-        active_chats[user_id] = partner_id
-        active_chats[partner_id] = user_id
-        chat_id = f"{min(user_id, partner_id)}-{max(user_id, partner_id)}"
-        chat_history[chat_id] = []
-        
-        partner_profile = profiles[partner_id]
-        await update.message.reply_text(
-            f"💕 *REAL-TIME MATCH!*\n\n"
-            f"✅ *{partner_profile['name']}* ({partner_profile['gender'].title()})\n"
-            f"📍 *{partner_profile['city']}*\n\n"
-            f"✨ *Typing LIVE! Messages instant!*",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💬 Chat", callback_data="chat")],
-                [InlineKeyboardButton("/stop", callback_data="stop")]
-            ]),
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Add to queue
-    if gender == 'boy':
-        waiting_boys.append(user_id)
-    else:
-        waiting_girls.append(user_id)
-    
+def top_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💖 Search by gender", callback_data="gender_search")],
+        [InlineKeyboardButton("🔍 Find a partner", callback_data="find_partner")],
+        [InlineKeyboardButton("👫 Friends", callback_data="friends")]
+    ])
+
+def profile_vip_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
+        [InlineKeyboardButton("⭐ VIP access", callback_data="vip")]
+    ])
+
+async def start(update, context):
     await update.message.reply_text(
-        f"🔍 *{profile['name']}* matching...\n"
-        f"⏱️ *Real-time queue*",
+        "💕 *Heartway Chat*\n\n"
+        "👤 *Create profile first:*\n"
+        "`Mir boy 24 Srinagar`",
         reply_markup=main_menu()
-    )
-
-async def cmd_stop(update, context):
-    user_id = str(update.message.from_user.id)
-    if user_id in active_chats:
-        partner_id = active_chats.pop(user_id)
-        active_chats.pop(partner_id, None)
-        typing_status.pop(user_id, None)
-        typing_status.pop(partner_id, None)
-        
-        chat_id = f"{min(user_id, partner_id)}-{max(user_id, partner_id)}"
-        chat_history.pop(chat_id, None)
-        
-        await update.message.reply_text(
-            "✅ *Chat ended*\n\n✨ /start new match",
-            reply_markup=main_menu()
-        )
-    else:
-        await update.message.reply_text(
-            "❌ No chat\n\n💕 /start",
-            reply_markup=main_menu()
-        )
-
-async def cmd_report(update, context):
-    await update.message.reply_text(
-        "⚠️ *Report*\n\n1. Inappropriate\n2. Harassment\n3. Spam\n\n*Send:*",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Reported", callback_data="done")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="back")]
-        ])
     )
 
 async def handle_message(update, context):
@@ -140,104 +47,203 @@ async def handle_message(update, context):
                 'city': ' '.join(parts[3:])
             }
             await update.message.reply_text(
-                f"✅ *{parts[0]} ready!*\n\n✨ /start",
-                reply_markup=main_menu()
+                "✅ *Profile ready!*\n\n"
+                "💕 *Perfect interface loaded!*",
+                reply_markup=top_menu()
             )
             return
         except:
             pass
     
-    # REAL-TIME CHAT
+    # Forward chat message
     if user_id in active_chats:
         partner_id = active_chats[user_id]
-        partner_profile = profiles[partner_id]
-        
-        chat_id = f"{min(user_id, partner_id)}-{max(user_id, partner_id)}"
-        if chat_id not in chat_history:
-            chat_history[chat_id] = []
-        
-        # Add to history
-        chat_history[chat_id].append({
-            "user": profiles[user_id]['name'],
-            "msg": text,
-            "time": time.time()
-        })
-        
-        # Send to partner with typing effect simulation
-        typing_status[partner_id] = True
-        await context.bot.send_chat_action(chat_id=partner_id, action="typing")
-        time.sleep(1)  # Typing delay
-        
-        await context.bot.send_message(
-            chat_id=partner_id,
-            text=f"💬 *{profiles[user_id]['name']} ({profiles[user_id]['gender'].title()}):*\n\n{text}",
-            parse_mode='Markdown'
-        )
-        typing_status[partner_id] = False
-        
+        try:
+            await context.bot.send_message(
+                chat_id=partner_id,
+                text=f"💬 *{profiles[user_id]['name']}:*\n\n{text}"
+            )
+        except:
+            pass
         return
     
     await update.message.reply_text(
         "**Heartway Chat**\n\n"
-        "**Commands:**\n`/start /stop /report`\n\n"
-        "`Mir boy 24 Srinagar`",
-        reply_markup=main_menu(),
-        parse_mode='Markdown'
+        "`Mir boy 24 Srinagar`\n\n"
+        "*Commands: /start /stop /report*",
+        reply_markup=main_menu()
     )
 
-async def btn_handler(update, context):
+async def btn_find_partner(update, context):
     query = update.callback_query
     await query.answer()
+    user_id = str(query.from_user.id)
     
-    if query.data == 'profile':
-        user_id = str(query.from_user.id)
-        profile = profiles.get(user_id)
-        if profile:
-            await query.edit_message_text(
-                f"👤 *{profile['name']}*\n🔸 *{profile['gender']}*\n"
-                f"📅 *{profile['age']}* | 📍 *{profile['city']}*\n\n"
-                "**Real-time chat ready!**",
-                reply_markup=main_menu(),
-                parse_mode='Markdown'
-            )
-        else:
-            await query.edit_message_text("👤 `Mir boy 24 Srinagar`", parse_mode='Markdown')
-    elif query.data == 'vip':
+    if user_id not in profiles:
         await query.edit_message_text(
-            "⭐ **VIP Real-time**\n\n"
-            "⚡ Priority matching\n"
-            "💬 Live typing indicator\n"
-            "📱 Instant delivery\n"
-            "📸 Photo sharing\n\n*₹99/week*",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="back")]]),
-            parse_mode='Markdown'
+            "👤 *First create profile:*\n\n"
+            "`Mir boy 24 Srinagar`",
+            reply_markup=main_menu()
         )
-    elif query.data == 'chat':
+        return
+    
+    profile = profiles[user_id]
+    gender = profile['gender']
+    
+    # Clear old chat
+    if user_id in active_chats:
+        partner_id = active_chats.pop(user_id)
+        active_chats.pop(partner_id, None)
+    
+    # Find match
+    if gender == 'boy' and waiting_girls:
+        partner_id = waiting_girls.pop(0)
+        active_chats[user_id] = partner_id
+        active_chats[partner_id] = user_id
+        
         await query.edit_message_text(
-            "💬 **Real-time Chat Active**\n\n"
-            "✨ Typing indicators\n"
-            "⚡ Instant messages\n\n**/stop to end**",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("/stop", callback_data="stop")]]),
-            parse_mode='Markdown'
+            f"💕 *MATCH FOUND!*\n\n"
+            f"✅ Connected to *Girl*\n"
+            f"✨ Chat started!\n\n"
+            f"*💌 Write message below*",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💖 Search by gender", callback_data="gender_search")],
+                [InlineKeyboardButton("/stop - End chat", callback_data="stop")]
+            ])
+        )
+        return
+    elif gender == 'girl' and waiting_boys:
+        partner_id = waiting_boys.pop(0)
+        active_chats[user_id] = partner_id
+        active_chats[partner_id] = user_id
+        
+        await query.edit_message_text(
+            f"💕 *MATCH FOUND!*\n\n"
+            f"✅ Connected to *Boy*\n"
+            f"✨ Chat started!\n\n"
+            f"*💌 Write message below*",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💖 Search by gender", callback_data="gender_search")],
+                [InlineKeyboardButton("/stop - End chat", callback_data="stop")]
+            ])
+        )
+        return
+    
+    # Add to queue
+    if gender == 'boy':
+        waiting_boys.append(user_id)
+    else:
+        waiting_girls.append(user_id)
+    
+    await query.edit_message_text(
+        f"🔍 *Finding partner...*\n\n"
+        f"👤 *{profile['name']}* ({profile['gender'].title()})\n"
+        f"⏳ *Real-time matching*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Try again", callback_data="find_partner")],
+            [InlineKeyboardButton("⬅️ Menu", callback_data="menu")]
+        ])
+    )
+
+async def btn_gender_search(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "💖 *Search by Gender*\n\n"
+        "**VIP Feature**\n\n"
+        "🔸 *Boys only*\n"
+        "🔸 *Girls only*\n\n"
+        "*Upgrade VIP to unlock!*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⭐ VIP access", callback_data="vip")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="find_partner")]
+        ])
+    )
+
+async def btn_profile(update, context):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    
+    profile = profiles.get(user_id)
+    if profile:
+        await query.edit_message_text(
+            f"👤 *{profile['name']}*\n"
+            f"🔸 *{profile['gender'].title()}*\n"
+            f"📅 *{profile['age']}*\n"
+            f"📍 *{profile['city']}*\n\n"
+            "**Ready for matching!**",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔍 Find partner", callback_data="find_partner")],
+                [InlineKeyboardButton("⬅️ Menu", callback_data="menu")]
+            ])
         )
     else:
-        await query.edit_message_text(
-            "**Commands:**\n`/start /stop /report`",
-            reply_markup=main_menu(),
-            parse_mode='Markdown'
+        await query.edit_message_text("👤 `Mir boy 24 Srinagar`", parse_mode='Markdown')
+
+async def btn_vip(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "⭐ *VIP Access*\n\n"
+        "💎 *₹99/week*\n"
+        "✨ *Search by gender*\n"
+        "📸 *Send photos*\n"
+        "⚡ *Priority matching*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💎 Get VIP", callback_data="vip_buy")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="menu")]
+        ])
+    )
+
+async def btn_back(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "💕 *Heartway Chat*",
+        reply_markup=top_menu()
+    )
+
+async def btn_placeholder(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        "🚀 *Feature coming soon!*",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Back", callback_data="menu")]
+        ])
+    )
+
+async def cmd_stop(update, context):
+    user_id = str(update.message.from_user.id)
+    if user_id in active_chats:
+        partner_id = active_chats.pop(user_id)
+        active_chats.pop(partner_id, None)
+        await update.message.reply_text(
+            "✅ *Chat ended!*\n\n🔍 *Find new partner*",
+            reply_markup=top_menu()
         )
+    else:
+        await update.message.reply_text("❌ *No active chat*", reply_markup=top_menu())
 
 if __name__ == "__main__":
-    print("🚀 @Heartwaychatbot v14.0 - REAL-TIME!")
+    print("🚀 @Heartwaychatbot v15.0 - PERFECT INTERFACE!")
     app = Application.builder().token("8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA").build()
     
-    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", cmd_stop))
-    app.add_handler(CommandHandler("report", cmd_report))
-    app.add_handler(CallbackQueryHandler(btn_handler))
+    
+    app.add_handler(CallbackQueryHandler(btn_find_partner, pattern="^find_partner$"))
+    app.add_handler(CallbackQueryHandler(btn_gender_search, pattern="^gender_search$"))
+    app.add_handler(CallbackQueryHandler(btn_profile, pattern="^profile$"))
+    app.add_handler(CallbackQueryHandler(btn_vip, pattern="^vip$"))
+    app.add_handler(CallbackQueryHandler(btn_back, pattern="^(menu|back)$"))
+    app.add_handler(CallbackQueryHandler(btn_placeholder))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("✅ REAL-TIME FEATURES LIVE!")
+    print("✅ EXACT INTERFACE MATCH!")
     app.run_polling()
+
 
 
