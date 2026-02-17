@@ -1,14 +1,31 @@
+
+
 import logging
 import sqlite3
-import uuid
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+import asyncio
+from pyrogram import Client
+from pyrogram.raw.functions.messages import StartBot
+from pyrogram.raw.functions.channels import CreateChannel
+from pyrogram.raw.types import InputPeerChannel
+from pytgcalls import PyTgCalls, StreamType
+from pytgcalls.types import AudioVideoPiped
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 # Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 
+
+
 TOKEN = '8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA'
+API_ID = your_api_id  # From my.telegram.org
+API_HASH = 'your_api_hash'
+SESSION_NAME = 'userbot_session'  # From generate_session.py
+
+# Userbot setup
+userbot = Client(SESSION_NAME, api_id=API_ID, api_hash=API_HASH)
+tgcalls = PyTgCalls(userbot)
 
 # Database setup
 conn = sqlite3.connect('bot.db', check_same_thread=False)
@@ -24,33 +41,12 @@ cursor.execute('''
 conn.commit()
 
 # In-memory storage
-user_states = {}  # {user_id: {'state': 'idle'|'waiting'|'matched', 'partner_id': None, 'preference': 'girls'|'boys'}}
+user_states = {}  # {user_id: {'state': 'idle'|'waiting'|'matched', 'partner_id': None, 'preference': 'girls'|'boys', 'group_id': None}}
 waiting_queues = {'girls': [], 'boys': []}
-call_states = {}  # {call_id: {'initiator': user_id, 'partner': partner_id, 'type': 'video'|'audio'}}
 
-# ... (keep all previous functions: start, init_user, get_user_data, increment_call_count, can_make_call, find_partner, preference_callback, try_match, handle_message, stop, rating_callback, report_callback, get_main_menu, get_preference_menu, get_rating_menu)
+# ... (keep all previous functions: init_user, get_user_data, increment_call_count, can_make_call, start, find_partner, preference_callback, try_match, handle_message, stop, rating_callback, report_callback, get_main_menu, get_preference_menu, get_chat_menu, get_rating_menu, get_call_options_menu)
 
-# Updated get_chat_menu with call button
-def get_chat_menu():
-    keyboard = [
-        [InlineKeyboardButton("👍", callback_data='up'), InlineKeyboardButton("👎", callback_data='down')],
-        [InlineKeyboardButton("⚠️ Report", callback_data='report')],
-        [InlineKeyboardButton("📞 Call", callback_data='call')]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# Callback for call button
-async def call_callback(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-    state = user_states.get(user_id, {}).get('state')
-    if state != 'matched':
-        await query.edit_message_text("You need to be in a chat to call.")
-        return
-    await query.edit_message_text("Choose call type:", reply_markup=get_call_options_menu())
-
-# Callback for call options (video/audio)
+# Updated call_option_callback to use userbot for calls
 async def call_option_callback(update: Update, context):
     query = update.callback_query
     await query.answer()
@@ -60,25 +56,53 @@ async def call_option_callback(update: Update, context):
     
     if can_make_call(user_id, call_type):
         increment_call_count(user_id, call_type)
-        call_id = str(uuid.uuid4())
-        call_states[call_id] = {'initiator': user_id, 'partner': partner_id, 'type': call_type}
         
-        # Send Mini App button to both
-        web_app_url = f"YOUR_MINI_APP_URL?call_id={call_id}&call_type={call_type}"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"Join {call_type.capitalize()} Call", web_app=WebAppInfo(url=web_app_url))]])
+        # Create temporary supergroup via userbot
+        group = await userbot.invoke(CreateChannel(title='Anonymous Call', about='Temporary call group'))
+        group_id = group.chats[0].id
         
-        await context.bot.send_message(user_id, f"Starting {call_type} call. Join via the button.", reply_markup=keyboard)
-        await context.bot.send_message(partner_id, f"Your partner started a {call_type} call. Join via the button.", reply_markup=keyboard)
+        # Add both users to group (anonymity note: usernames visible)
+        await userbot.add_chat_members(group_id, [user_id, partner_id])
+        
+        # Export invite link (for users to join if needed)
+        invite_link = await userbot.export_chat_invite_link(group_id)
+        
+        # Start group call
+        await tgcalls.join_group_call(
+            group_id,
+            AudioVideoPiped('silent_audio.mp3' if call_type == 'audio' else 'silent_video.mp4'),  # Placeholder stream; replace with actual if needed
+            stream_type=StreamType().local_stream,
+            enable_video=(call_type == 'video')
+        )
+        
+        user_states[user_id]['group_id'] = group_id
+        user_states[partner_id]['group_id'] = group_id
+        
+        # Notify both
+        msg = f"{call_type.capitalize()} call started! Join the voice chat in the group: {invite_link}\n(Note: Usernames may be visible for anonymity reasons.)"
+        await context.bot.send_message(user_id, msg)
+        await context.bot.send_message(partner_id, msg)
     else:
         await query.edit_message_text("You've reached your free limit. Upgrade to premium for more calls.")
-        # Add premium logic here
-
-# ... (keep get_call_options_menu)
 
 if __name__ == '__main__':
+    # Start userbot and tgcalls
+    asyncio.get_event_loop().run_until_complete(userbot.start())
+    asyncio.get_event_loop().run_until_complete(tgcalls.start())
+    
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Handlers (keep previous, add call handlers if not already)
-    # ... (same as before)
+    # Handlers (same as before)
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('find', find_partner))
+    application.add_handler(CommandHandler('stop', stop))
+    application.add_handler(CallbackQueryHandler(preference_callback, pattern='^(girls|boys)$'))
+    application.add_handler(CallbackQueryHandler(rating_callback, pattern='^(up|down)$'))
+    application.add_handler(CallbackQueryHandler(report_callback, pattern='^report$'))
+    application.add_handler(CallbackQueryHandler(call_callback, pattern='^call$'))
+    application.add_handler(CallbackQueryHandler(call_option_callback, pattern='^(video|audio)$'))
+    application.add_handler(MessageHandler(filters.Regex('^⚡ Find a Partner$'), find_partner))
+    application.add_handler(MessageHandler(filters.Regex('^(👻 Match with girls|😊 Match with boys)$'), find_partner))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     application.run_polling()
