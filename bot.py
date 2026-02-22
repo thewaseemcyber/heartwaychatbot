@@ -275,31 +275,48 @@ async def btn_msg(update: Update, context):
         await update.message.reply_text(f'👥 Online:\n{text}')
     # etc...
 
+# REPLACE your MessageHandler section with this CORRECT order:
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
     
+    # 1. Profile conversation FIRST
     conv = ConversationHandler(
         entry_points=[CommandHandler('profile', profile_start)],
-        states={PHOTO:[MessageHandler(filters.PHOTO, photo)],
-                NAME:[MessageHandler(filters.TEXT, name_step)],
-                AGE:[MessageHandler(filters.TEXT, age_step)],
-                GENDER:[CallbackQueryHandler(gender_cb)],
-                CITY:[MessageHandler(filters.TEXT, city_step)],
-                BIO:[MessageHandler(filters.TEXT, bio_step)]},
+        states={
+            PHOTO:[MessageHandler(filters.PHOTO, photo)],
+            NAME:[MessageHandler(filters.TEXT & ~filters.COMMAND, name_step)],
+            AGE:[MessageHandler(filters.TEXT & ~filters.COMMAND, age_step)],
+            GENDER:[CallbackQueryHandler(gender_cb)],
+            CITY:[MessageHandler(filters.TEXT & ~filters.COMMAND, city_step)],
+            BIO:[MessageHandler(filters.TEXT & ~filters.COMMAND, bio_step)]
+        },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
     
+    # 2. Commands
     app.add_handler(conv)
     app.add_handler(CommandHandler('start', start))
     app.add_handler(CommandHandler('stop', stop))
     app.add_handler(CommandHandler('credits', credits))
+    app.add_handler(CommandHandler('profile', profile_start))
+    
+    # 3. Payments
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, payment_ok))
-    app.add_handler(CallbackQueryHandler(buttons))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message))
-    app.add_handler(MessageHandler(filters.Regex('^(💎 Credits|✏️ Profile|👀 Browse|📍 Nearby|❓ Help)$'), btn_msg))
     
-    print('✅ @Heartwaychatbot LIVE - ZERO CRASH!')
+    # 4. Chat buttons (newchat, random, boys, girls, like, block, stop)
+    app.add_handler(CallbackQueryHandler(buttons))
+    
+    # 5. CHAT MESSAGES ONLY (when matched)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message))
+    
+    # 6. KEYBOARD BUTTONS LAST (specific exact matches)
+    app.add_handler(MessageHandler(filters.Regex('^💎 Credits$'), credits))
+    app.add_handler(MessageHandler(filters.Regex('^✏️ Profile$'), profile))
+    app.add_handler(MessageHandler(filters.Regex('^👀 Browse$'), browse_people))
+    app.add_handler(MessageHandler(filters.Regex('^📍 Nearby$'), nearby_people))
+    
+    print('✅ @Heartwaychatbot LIVE - FIXED!')
     app.run_polling()
-
 
