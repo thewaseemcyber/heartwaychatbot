@@ -49,7 +49,6 @@ def get_full_profile(user_id):
     cursor.execute('SELECT * FROM profiles WHERE user_id = ?', (user_id,))
     return cursor.fetchone()
 
-# Profile display EXACT screenshot
 async def show_profile(update: Update, context):
     user_id = update.effective_user.id
     profile = get_full_profile(user_id)
@@ -198,7 +197,6 @@ application.add_handler(CommandHandler('setfilter', setfilter))
 application.add_handler(CallbackQueryHandler(profile_callback, pattern='^(edit_profile|toggle_gps|liked_list|blocked_list|contact_list|filters)$'))
 # Update profile conv_handler states to include CITY, BIO→FILTERS
 # In profile_gender → profile_city (chain)
-
 
 
 
