@@ -1,356 +1,204 @@
-import logging
-import sqlite3
-import math
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters, ContextTypes
-
-# States for profile creation
-PHOTO, NAME, AGE, GENDER, BIO = range(5)
-
-# Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-TOKEN = '8530545620:AAFvx6jwfKJ5Q5avQyFwpXVze9-M29087cA'
-
-# Database setup
-conn = sqlite3.connect('bot.db', check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        credits INTEGER DEFAULT 0,
-        is_premium BOOLEAN DEFAULT FALSE,
-        gender_choices_used INTEGER DEFAULT 0,
-        latitude REAL,
-        longitude REAL,
-        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        referral_code TEXT,
-        has_profile BOOLEAN DEFAULT FALSE
-    )
-''')
+# Add to DB tables
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS profiles (
         user_id INTEGER PRIMARY KEY,
-        profile_name TEXT,
-        profile_photo_file_id TEXT,
+        photo_file_id TEXT,
+        name TEXT NOT NULL,
         age INTEGER,
-        gender TEXT,
-        bio TEXT
+        gender TEXT,  -- 'boy'/'girl'
+        city TEXT,
+        bio TEXT,
+        gps_enabled BOOLEAN DEFAULT FALSE,
+        filter_age_min INTEGER DEFAULT 13,
+        filter_age_max INTEGER DEFAULT 100,
+        filter_gender TEXT DEFAULT 'any'  -- 'any'/'boy'/'girl'
+    )
+''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS likes (
+        user_id INTEGER,
+        liked_user_id INTEGER,
+        PRIMARY KEY (user_id, liked_user_id)
+    )
+''')
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS blocked (
+        user_id INTEGER,
+        blocked_user_id INTEGER,
+        PRIMARY KEY (user_id, blocked_user_id)
     )
 ''')
 conn.commit()
 
-# In-memory storage
-user_states = {}  # {user_id: {'state': 'idle'|'waiting'|'matched'|'profile_photo', 'partner_id': None, 'preference': None, 'profile_state': 0}}
-waiting_queues = {'random': [], 'boys': [], 'girls': []}
-online_users = {}  # {user_id: last_active_time}
+# Profile states (extended)
+PHOTO, NAME, AGE, GENDER, CITY, BIO, FILTERS = range(7)
 
-def init_user(user_id):
-    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-    if not cursor.fetchone():
-        referral_code = str(user_id)[:8]
-        cursor.execute('INSERT INTO users (user_id, referral_code) VALUES (?, ?)', (user_id, referral_code))
-        conn.commit()
-
-def update_last_active(user_id):
-    cursor.execute('UPDATE users SET last_active = CURRENT_TIMESTAMP WHERE user_id = ?', (user_id,))
-    conn.commit()
-    online_users[user_id] = datetime.now()
-
-def get_user_data(user_id):
-    cursor.execute('SELECT credits, is_premium, gender_choices_used, latitude, longitude, referral_code, has_profile FROM users WHERE user_id = ?', (user_id,))
-    return cursor.fetchone() or (0, False, 0, None, None, None, False)
-
-def get_profile_data(user_id):
-    cursor.execute('SELECT profile_name, profile_photo_file_id, age, gender, bio FROM profiles WHERE user_id = ?', (user_id,))
-    return cursor.fetchone()
-
-def save_profile(user_id, photo_file_id=None, name=None, age=None, gender=None, bio=None):
-    if photo_file_id: cursor.execute('INSERT OR REPLACE INTO profiles (user_id, profile_photo_file_id, profile_name, age, gender, bio) VALUES (?, ?, ?, ?, ?, ?)', (user_id, photo_file_id, name, age, gender, bio))
-    else: cursor.execute('INSERT OR REPLACE INTO profiles (user_id, profile_name, age, gender, bio) VALUES (?, ?, ?, ?, ?)', (user_id, name, age, gender, bio))
+# Save full profile
+def save_full_profile(user_id, **kwargs):
+    cursor.execute('''
+        INSERT OR REPLACE INTO profiles (user_id, photo_file_id, name, age, gender, city, bio, 
+        gps_enabled, filter_age_min, filter_age_max, filter_gender) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, kwargs.get('photo'), kwargs.get('name'), kwargs.get('age'), kwargs.get('gender'),
+          kwargs.get('city'), kwargs.get('bio'), kwargs.get('gps', False),
+          kwargs.get('min_age', 13), kwargs.get('max_age', 100), kwargs.get('filter_gender', 'any')))
     cursor.execute('UPDATE users SET has_profile = TRUE WHERE user_id = ?', (user_id,))
     conn.commit()
 
-def increment_gender_choice(user_id):
-    cursor.execute('UPDATE users SET gender_choices_used = gender_choices_used + 1 WHERE user_id = ?', (user_id,))
-    conn.commit()
+def get_full_profile(user_id):
+    cursor.execute('SELECT * FROM profiles WHERE user_id = ?', (user_id,))
+    return cursor.fetchone()
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return R * c
-
-def get_display_name(user_id):
-    profile = get_profile_data(user_id)
-    if profile and profile[0]:
-        name, age, gender = profile[0], profile[2], profile[3]
-        return f"{name}, {age}{'M' if gender == 'boy' else 'F'}"
-    return "No Profile"
-
-# Profile creation handlers
-async def profile_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Profile display EXACT screenshot
+async def show_profile(update: Update, context):
     user_id = update.effective_user.id
-    update_last_active(user_id)
-    await update.message.reply_text("Create your profile (required for chats):\n1. Send photo")
-    return PHOTO
-
-async def profile_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    photo_file_id = update.message.photo[-1].file_id
-    context.user_data['profile_photo'] = photo_file_id
-    await update.message.reply_text("What's your name?")
-    return NAME
-
-async def profile_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['profile_name'] = update.message.text.strip()
-    await update.message.reply_text("Your age? (e.g., 24)")
-    return AGE
-
-async def profile_age(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        age = int(update.message.text)
-        if not 13 <= age <= 100:
-            raise ValueError
-        context.user_data['profile_age'] = age
-    except:
-        await update.message.reply_text("Invalid age (13-100). Try again.")
-        return AGE
-    keyboard = [[InlineKeyboardButton("Boy", callback_data='boy')], [InlineKeyboardButton("Girl", callback_data='girl')]]
-    await update.message.reply_text("Your gender?", reply_markup=InlineKeyboardMarkup(keyboard))
-    return GENDER
-
-async def profile_gender(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context.user_data['profile_gender'] = query.data
-    await query.edit_message_text("Tell about yourself (bio):")
-    return BIO
-
-async def profile_bio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    data = context.user_data
-    profile_name = f"{data['profile_name']}"
-    save_profile(user_id, data.get('profile_photo'), profile_name, data['profile_age'], data['profile_gender'], update.message.text.strip())
-    await update.message.reply_text(f"✅ Profile saved!\nDisplay: {get_display_name(user_id)}\n\nBack to menu.", reply_markup=get_main_menu())
-    context.user_data.clear()
-    return ConversationHandler.END
-
-async def profile_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Profile creation cancelled.", reply_markup=get_main_menu())
-    context.user_data.clear()
-    return ConversationHandler.END
-
-# Menus
-def get_main_menu():
-    keyboard = [
-        [KeyboardButton("💬 New Anonymous Chat!")],
-        [KeyboardButton("👀 Browse People"), KeyboardButton("📍 Nearby People")],
-        [KeyboardButton("✏️ My Profile"), KeyboardButton("💎 Credit"), KeyboardButton("😕 Help")],
-        [KeyboardButton("⚠️ Refer Friends")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_chat_options_menu():
-    keyboard = [
-        [InlineKeyboardButton("🎲 Random", callback_data='random')],
-        [InlineKeyboardButton("😊 Boy", callback_data='boys'), InlineKeyboardButton("👧 Girl", callback_data='girls')]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-# Other handlers (start, new_chat, etc. - fixed)
-async def start(update: Update, context):
-    user_id = update.effective_user.id
-    init_user(user_id)
-    update_last_active(user_id)
-    user_states[user_id] = {'state': 'idle', 'partner_id': None, 'preference': None}
-    has_profile = get_user_data(user_id)[6]
-    text = "Welcome!" if has_profile else "Create profile first: /profile"
-    await update.message.reply_text(text, reply_markup=get_main_menu())
-
-async def new_chat(update: Update, context):
-    user_id = update.effective_user.id
-    update_last_active(user_id)
-    if user_states.get(user_id, {}).get('state') != 'idle':
-        await update.message.reply_text("Finish current chat: /stop")
+    profile = get_full_profile(user_id)
+    if not profile:
+        await update.message.reply_text("Create profile: /profile")
         return
-    has_profile = get_user_data(user_id)[6]
-    if not has_profile:
-        await update.message.reply_text("Create profile first: /profile")
-        return
-    await update.message.reply_text("Choose preference:", reply_markup=get_chat_options_menu())
+    
+    photo_id, name, age, gender, city, bio, gps = profile[1:8]
+    display = f"""👤 {name}
+⚥ {'Boy' if gender=='boy' else 'Girl'}
+📍 {city}
+🕐 Age: {age}
 
-async def chat_option_callback(update: Update, context):
+📝 {bio or 'No bio'}
+
+{'📍 My GPS: Like' if gps else '📍 My GPS: Inactive'}
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Edit Profile", callback_data='edit_profile')],
+        [InlineKeyboardButton("📍 Edit GPS", callback_data='toggle_gps')],
+        [InlineKeyboardButton("👥 Liked Users", callback_data='liked_list'), InlineKeyboardButton("🚫 Blocked Users", callback_data='blocked_list')],
+        [InlineKeyboardButton("⚙️ Advanced Settings", callback_data='filters')]
+    ]
+    if get_user_data(user_id)[1]:  # Premium
+        keyboard.append([InlineKeyboardButton("💬 Contact Users", callback_data='contact_list')])
+    
+    if photo_id:
+        await context.bot.send_photo(user_id, photo_id, caption=display, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else:
+        await update.message.reply_text(display, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+# Profile callbacks
+async def profile_callback(update: Update, context):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    update_last_active(user_id)
-    preference = query.data
-    _, is_premium, gender_choices_used, _, _, _, has_profile = get_user_data(user_id)
-    if not has_profile:
-        await query.edit_message_text("Create /profile first!")
+    
+    if query.data == 'edit_profile':
+        await query.edit_message_text("Edit profile: Send new photo or /profile")
         return
-    if preference != 'random' and (gender_choices_used >= 5 and not is_premium):
-        await query.edit_message_text("5 free choices used. Random or premium.")
+    elif query.data == 'toggle_gps':
+        cursor.execute('UPDATE profiles SET gps_enabled = NOT gps_enabled WHERE user_id = ?', (user_id,))
+        conn.commit()
+        await show_profile(query, context)
         return
-    if preference != 'random':
-        increment_gender_choice(user_id)
-    # Add to queue ONLY - no auto match
-    user_states[user_id] = {'state': 'waiting', 'partner_id': None, 'preference': preference}
-    waiting_queues[preference].append(user_id)
-    await query.edit_message_text(f"✅ Added to {preference} queue. Waiting...\n/stop to cancel.")
-    # Try match after adding
-    await try_match_all(context)
+    elif query.data == 'liked_list':
+        cursor.execute('SELECT liked_user_id FROM likes WHERE user_id = ?', (user_id,))
+        likes = [get_display_name(uid[0]) for uid in cursor.fetchall()]
+        text = f"👍 Liked ({len(likes)}):\n" + '\n'.join(likes[:10]) if likes else "No likes"
+    elif query.data == 'blocked_list':
+        cursor.execute('SELECT blocked_user_id FROM blocked WHERE user_id = ?', (user_id,))
+        blocked = [get_display_name(uid[0]) for uid in cursor.fetchall()]
+        text = f"🚫 Blocked ({len(blocked)}):\n" + '\n'.join(blocked[:10]) if blocked else "No blocks"
+    elif query.data == 'contact_list' and get_user_data(user_id)[1]:
+        text = "💬 Premium: DM any user (/dm @name)"
+    elif query.data == 'filters':
+        profile = get_full_profile(user_id)
+        text = f"⚙️ Filters:\nMin age: {profile[8]}, Max: {profile[9]}\nGender: {profile[10]}\n\nEdit: /setfilter min max gender"
+    
+    await query.edit_message_text(text, parse_mode='Markdown')
 
-async def try_match_all(context):
-    # Check all queues for matches
-    for queue_key in list(waiting_queues.keys()):
-        queue = waiting_queues[queue_key]
-        if not queue:
-            continue
-        user_id = queue[0]
-        preference = user_states[user_id]['preference']
-        if preference == 'random':
-            opposite_queue = waiting_queues['boys'] + waiting_queues['girls'] + waiting_queues['random']
-            opposite_queue = [uid for uid in opposite_queue if uid != user_id]
-        else:
-            opposite = 'girls' if preference == 'boys' else 'boys'
-            opposite_queue = waiting_queues[opposite] + waiting_queues['random']
-            opposite_queue = [uid for uid in opposite_queue if uid != user_id]
-        if opposite_queue:
-            partner_id = opposite_queue[0]
-            if waiting_queues.get(preference): waiting_queues[preference].pop(0)
-            if partner_id in waiting_queues.get(user_states[partner_id]['preference'], []):
-                partner_pref = user_states[partner_id]['preference']
-                waiting_queues[partner_pref].pop(0)
-            user_states[user_id]['state'] = 'matched'
-            user_states[user_id]['partner_id'] = partner_id
-            user_states[partner_id]['state'] = 'matched'
-            user_states[partner_id]['partner_id'] = user_id
-            display_u = get_display_name(user_id)
-            display_p = get_display_name(partner_id)
-            await context.bot.send_message(user_id, f"✅ Matched with {display_p}!\nChat now:", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner_id, f"✅ Matched with {display_u}!\nChat now:", reply_markup=get_chat_menu())
+# Enhanced profile creation (add city + filters)
+async def profile_city(update: Update, context):
+    context.user_data['profile_city'] = update.message.text.strip()
+    await update.message.reply_text("Bio?")
+    return BIO
 
-# Message handler
-async def handle_message(update: Update, context):
+async def profile_bio(update: Update, context):  # Updated
+    context.user_data['profile_bio'] = update.message.text.strip()
+    await update.message.reply_text("Filters?\nSend: min_age max_age gender\n(e.g., '18 30 girl' or 'any')\nOr 'skip'")
+    return FILTERS
+
+async def profile_filters(update: Update, context):
     user_id = update.effective_user.id
-    update_last_active(user_id)
-    state = user_states.get(user_id, {}).get('state')
-    if state == 'matched':
-        partner_id = user_states[user_id]['partner_id']
-        display_name = get_display_name(user_id)
-        await context.bot.send_message(partner_id, f"💬 {display_name}: {update.message.text}")
-    else:
-        await update.message.reply_text("Use 💬 New Anonymous Chat!", reply_markup=get_main_menu())
+    data = context.user_data
+    try:
+        parts = update.message.text.split()
+        min_age, max_age, fgender = 13, 100, 'any'
+        if parts[0] != 'skip':
+            min_age, max_age = int(parts[0]), int(parts[1])
+            fgender = parts[2] if len(parts) > 2 else 'any'
+        save_full_profile(user_id, **data, min_age=min_age, max_age=max_age, filter_gender=fgender)
+    except:
+        save_full_profile(user_id, **data)  # Default filters
+    
+    await update.message.reply_text("✅ Profile created!", reply_markup=get_main_menu())
+    context.user_data.clear()
+    return ConversationHandler.END
 
-async def stop(update: Update, context):
-    user_id = update.effective_user.id
-    update_last_active(user_id)
-    state = user_states.get(user_id, {}).get('state')
-    if state == 'waiting':
-        pref = user_states[user_id]['preference']
-        if user_id in waiting_queues.get(pref, []):
-            waiting_queues[pref].remove(user_id)
-    elif state == 'matched':
-        partner_id = user_states[user_id]['partner_id']
-        display_name = get_display_name(user_id)
-        await context.bot.send_message(partner_id, f"{display_name} left.", reply_markup=get_main_menu())
-        user_states[partner_id]['state'] = 'idle'
-        user_states[partner_id]['partner_id'] = None
-    user_states[user_id] = {'state': 'idle', 'partner_id': None, 'preference': None}
-    await update.message.reply_text("Chat ended.", reply_markup=get_main_menu())
+# Filter matching (in try_match_all, before matching)
+def matches_filter(user_id, potential_partner_id):
+    profile_u = get_full_profile(user_id)
+    profile_p = get_full_profile(potential_partner_id)
+    if not profile_u or not profile_p: return False
+    p_age, p_gender = profile_p[3], profile_p[4]
+    return (profile_u[8] <= p_age <= profile_u[9] and 
+            (profile_u[10] == 'any' or profile_u[10] == p_gender))
 
-# Browse/nearby - show profiles
-async def browse_people(update: Update, context):
-    user_id = update.effective_user.id
-    update_last_active(user_id)
-    now = datetime.now()
-    online_list = [uid for uid, ts in online_users.items() if now - ts < timedelta(minutes=5)]
-    text = f"👥 {len(online_list)} online:\n\n"
-    for uid in online_list[:10]:  # Top 10
-        text += f"• {get_display_name(uid)}\n"
-    text += "\nPremium: /dm @username"
-    await update.message.reply_text(text, reply_markup=get_main_menu(), parse_mode='Markdown')
+# Update try_match_all:
+# Before partner_id = opposite_queue[0]
+# if not matches_filter(user_id, partner_id): continue  # Skip non-matching
 
-async def nearby_people(update: Update, context):
-    user_id = update.effective_user.id
-    update_last_active(user_id)
-    _, _, lat, lon, _, _, _ = get_user_data(user_id)
-    if lat is None:
-        keyboard = [[KeyboardButton("📍 Share Location", request_location=True)]]
-        await update.message.reply_text("Share location?", reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True))
+# New commands
+async def setfilter(update: Update, context):
+    # /setfilter 18 30 girl
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /setfilter min max [boy/girl/any]")
         return
-    cursor.execute('SELECT user_id, latitude, longitude FROM users WHERE latitude IS NOT NULL AND user_id != ?', (user_id,))
-    nearby = []
-    for row in cursor.fetchall():
-        uid, ulat, ulon = row
-        dist = haversine(lat, lon, ulat, ulon)
-        if dist < 50:
-            nearby.append((uid, dist))
-    nearby.sort(key=lambda x: x[1])
-    text = f"📍 {len(nearby)} nearby:\n\n"
-    for uid, dist in nearby[:10]:
-        text += f"• {get_display_name(uid)} ({dist:.1f}km)\n"
-    await update.message.reply_text(text, reply_markup=get_main_menu(), parse_mode='Markdown')
+    try:
+        min_age, max_age = int(context.args[0]), int(context.args[1])
+        fgender = context.args[2] if len(context.args) > 2 else 'any'
+        cursor.execute('UPDATE profiles SET filter_age_min=?, filter_age_max=?, filter_gender=? WHERE user_id=?',
+                      (min_age, max_age, fgender, update.effective_user.id))
+        conn.commit()
+        await update.message.reply_text(f"✅ Filters: {min_age}-{max_age} {fgender}")
+    except:
+        await update.message.reply_text("Invalid: /setfilter 18 30 girl")
 
-async def handle_location(update: Update, context):
-    user_id = update.effective_user.id
-    lat, lon = update.message.location.latitude, update.message.location.longitude
-    cursor.execute('UPDATE users SET latitude = ?, longitude = ? WHERE user_id = ?', (lat, lon, user_id))
-    conn.commit()
-    await update.message.reply_text("📍 Saved!", reply_markup=get_main_menu())
-
-# Chat menu callbacks (simple)
+# Like/Block in chat (add to get_chat_menu)
 def get_chat_menu():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⚠️ Report", callback_data='report'), InlineKeyboardButton("/stop", callback_data='stop')]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👍 Like", callback_data='like'), InlineKeyboardButton("🚫 Block", callback_data='block')],
+        [InlineKeyboardButton("⚠️ Report", callback_data='report'), InlineKeyboardButton("/stop", callback_data='stop')]
+    ])
 
+# Chat callbacks with like/block
 async def chat_callback(update: Update, context):
-    query = update.callback_query
-    await query.answer()
-    if query.data == 'report':
-        await query.edit_message_text("Report sent.")
-    elif query.data == 'stop':
+    # ... existing ...
+    if query.data == 'like':
+        partner_id = user_states[query.from_user.id]['partner_id']
+        cursor.execute('INSERT OR IGNORE INTO likes (user_id, liked_user_id) VALUES (?, ?)', 
+                      (query.from_user.id, partner_id))
+        conn.commit()
+        await query.answer("👍 Liked!")
+    elif query.data == 'block':
+        partner_id = user_states[query.from_user.id]['partner_id']
+        cursor.execute('INSERT OR IGNORE INTO blocked (user_id, blocked_user_id) VALUES (?, ?)', 
+                      (query.from_user.id, partner_id))
+        conn.commit()
         await stop(query, context)
+        await query.answer("🚫 Blocked!")
 
-# Simplified other commands (credit, etc. unchanged but stubbed)
-async def credit(update: Update, context): await update.message.reply_text("💎 Credits coming soon!", reply_markup=get_main_menu())
-async def help_command(update: Update, context): await update.message.reply_text("💬 New Chat → Wait in queue → Match!", reply_markup=get_main_menu())
+# Update handlers
+application.add_handler(CommandHandler('setfilter', setfilter))
+application.add_handler(CallbackQueryHandler(profile_callback, pattern='^(edit_profile|toggle_gps|liked_list|blocked_list|contact_list|filters)$'))
+# Update profile conv_handler states to include CITY, BIO→FILTERS
+# In profile_gender → profile_city (chain)
 
-if __name__ == '__main__':
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Profile conv handler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('profile', profile_start)],
-        states={
-            PHOTO: [MessageHandler(filters.PHOTO, profile_photo)],
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_name)],
-            AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_age)],
-            GENDER: [CallbackQueryHandler(profile_gender, pattern='^(boy|girl)$')],
-            BIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_bio)],
-        },
-        fallbacks=[CommandHandler('cancel', profile_cancel)],
-    )
-
-    # Add handlers
-    application.add_handler(conv_handler)
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler('stop', stop))
-    application.add_handler(CommandHandler('profile', profile_start))
-    application.add_handler(CommandHandler('credit', credit))
-    application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(CallbackQueryHandler(chat_option_callback, pattern='^(random|boys|girls)$'))
-    application.add_handler(CallbackQueryHandler(chat_callback, pattern='^(report|stop)$'))
-    application.add_handler(MessageHandler(filters.Regex('^💬 New Anonymous Chat!$'), new_chat))
-    application.add_handler(MessageHandler(filters.Regex('^(👀 Browse People|📍 Nearby People|✏️ My Profile|💎 Credit|😕 Help|⚠️ Refer Friends)$'), lambda u,c: start(u,c)))
-    application.add_handler(MessageHandler(filters.LOCATION, handle_location))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    application.run_polling()
 
 
 
